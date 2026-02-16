@@ -1,0 +1,14 @@
+[Unit]
+Description=CallaStream Player Poller
+After=network-online.target graphical.target
+Wants=network-online.target
+
+[Service]
+User=adminjeff
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/python3 /opt/callastream/player.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

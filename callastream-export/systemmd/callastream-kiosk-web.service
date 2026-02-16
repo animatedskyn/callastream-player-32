@@ -1,0 +1,15 @@
+[Unit]
+Description=CallaStream Local Kiosk Web (serves /opt/callastream on :8765)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/callastream
+ExecStart=/usr/bin/python3 -m http.server 8765 --bind 127.0.0.1 --directory /opt/callastream
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

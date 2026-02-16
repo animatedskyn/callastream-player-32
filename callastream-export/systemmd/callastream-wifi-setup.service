@@ -1,0 +1,14 @@
+[Unit]
+Description=CallaStream Wi-Fi Setup (AP + Captive Portal)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/callastream/setup/wifi_setup_daemon.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=CallaStream Boot Logo Apply (Plymouth + initramfs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/callastream/apply_boot_logo.sh
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

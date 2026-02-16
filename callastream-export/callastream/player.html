@@ -1,0 +1,347 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="pragma" content="no-cache" />
+  <meta http-equiv="expires" content="0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CallaStream Player</title>
+  <style>
+    html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
+
+    /*
+      Orientation handling:
+      - landscape: wrap is 100vw x 100vh
+      - portrait-left/right: wrap becomes 100vh x 100vw and is rotated
+    */
+    #wrap {
+      position:absolute;
+      top:50%; left:50%;
+      width:100vw; height:100vh;
+      transform: translate(-50%, -50%);
+      transform-origin: center center;
+      background:#000;
+    }
+
+    /* ✅ Slideshow image: native size (no upscale), only shrink if too large */
+    #img {
+      width: auto;
+      height: auto;
+      max-width: 100vw;
+      max-height: 100vh;
+      object-fit: contain; /* harmless here; max-* does the real work */
+      display: none;
+
+      /* center on screen */
+      position: absolute;
+      inset: 0;
+      margin: auto;
+    }
+
+    #frame { width:100%; height:100%; border:0; display:none; background:#000; }
+    #msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff;
+           font-family:system-ui, Arial, sans-serif; font-size:40px; text-align:center; padding:40px; opacity:.9; white-space:pre-line; }
+    #dbg { position:absolute; left:16px; bottom:12px; color:#fff; opacity:.55; font: 16px/1.2 system-ui, Arial, sans-serif; white-space:pre; pointer-events:none;  display:none; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <img id="img" alt="CallaStream content" />
+    <iframe id="frame" title="CallaStream web content" referrerpolicy="no-referrer"></iframe>
+    <div id="msg">Loading…</div>
+    <div id="dbg"></div>
+  </div>
+
+<script>
+(function(){
+  const stateUrl = () => window.location.origin + "/state.json?_=" + Date.now();
+
+  const imgEl = document.getElementById("img");
+  const frameEl = document.getElementById("frame");
+  const msgEl = document.getElementById("msg");
+  const wrapEl = document.getElementById("wrap");
+  const dbgEl = document.getElementById("dbg");
+
+  // Track current orientation to avoid re-applying on every poll
+  let currentOrientation = "landscape";
+
+  let timer = null;
+  let idx = 0;
+  let urls = [];
+  let intervalMs = 8000;
+
+  // Track what we're showing to avoid reloading iframe constantly
+  let currentMode = "";
+  let __polling = false;
+  let currentFrameSrc = "";
+
+  // Slideshow restart guard
+  let lastSlideKey = "";
+  let lastSlideRev = "";
+  let lastSlideInterval = 0;
+
+  function applyOrientation(o){
+    const orient = (o || "landscape").toString().trim().toLowerCase();
+    if(orient === currentOrientation) return;
+    currentOrientation = orient;
+
+    // Default: landscape
+    let w = "100vw", h = "100vh", rot = "0deg";
+    if(orient === "portrait-left"){
+      w = "100vh"; h = "100vw"; rot = "-90deg";
+    }else if(orient === "portrait-right"){
+      w = "100vh"; h = "100vw"; rot = "90deg";
+    }
+
+    wrapEl.style.width = w;
+    wrapEl.style.height = h;
+    wrapEl.style.transform = `translate(-50%, -50%) rotate(${rot})`;
+  }
+
+
+  function setDbg(s){ /* debug disabled */ }
+
+  function showMessage(text){
+    imgEl.style.display = "none";
+    frameEl.style.display = "none";
+    msgEl.style.display = "flex";
+    msgEl.textContent = text;
+  }
+
+  function showImage(url){
+    frameEl.style.display = "none";
+    msgEl.style.display = "none";
+
+    // Force image to be full-screen and on top (prevents 'No content assigned' overlay)
+    imgEl.style.display = "block";
+    imgEl.style.position = "fixed";
+    imgEl.style.top = "0";
+    imgEl.style.left = "0";
+    imgEl.style.width = "100vw";
+    imgEl.style.height = "100vh";
+    imgEl.style.objectFit = "contain";
+    imgEl.style.background = "#000";
+    imgEl.style.zIndex = "99999";
+
+    imgEl.src = url + (url.includes("?") ? "&" : "?") + "_=" + Date.now();
+  }
+
+  function showFrame(url){
+    imgEl.style.display = "none";
+    msgEl.style.display = "none";
+    frameEl.style.display = "block";
+
+    if(url !== currentFrameSrc){
+      currentFrameSrc = url;
+      frameEl.src = url;
+    }
+  }
+
+  function stopSlideshow(){
+    if(timer){ clearInterval(timer); timer = null; }
+    urls = [];
+    idx = 0;
+  }
+
+  function startSlideshow(){
+    if(currentMode === "wifi_setup"){ return; }
+    if(timer){ clearInterval(timer); timer = null; }
+    if(!urls.length){
+      showMessage("No content assigned");
+      return;
+    }
+    idx = 0;
+    showImage(urls[0]);
+    timer = setInterval(() => {
+      idx = (idx + 1) % urls.length;
+      showImage(urls[idx]);
+    }, intervalMs);
+  }
+
+  function toYouTubeEmbed(u){
+    // Accept full YouTube URL or just an ID
+    if(!u) return "";
+    const s = String(u).trim();
+
+    // If already an embed URL, use it
+    if(s.includes("youtube.com/embed/")) return s;
+
+    let id = "";
+    try{
+      const url = new URL(s);
+      if(url.hostname.includes("youtu.be")){
+        id = url.pathname.replace("/","").trim();
+      }else if(url.hostname.includes("youtube.com")){
+        id = url.searchParams.get("v") || "";
+        if(!id && url.pathname.includes("/shorts/")) id = url.pathname.split("/shorts/")[1]?.split(/[?&#]/)[0] || "";
+      }
+    }catch(e){
+      // maybe user supplied raw ID
+      id = s;
+    }
+    if(!id) return "";
+    return "https://www.youtube.com/embed/" + encodeURIComponent(id) + "?autoplay=1&mute=1&controls=0&rel=0";
+  }
+
+  async function poll(){
+    if(__polling) return;
+    __polling = true;
+    try{
+      const res = await fetch(stateUrl(), { cache: "no-store" });
+      if(!res.ok) throw new Error("state_fetch_http_" + res.status);
+      const s = await res.json();
+
+
+      // WIFI_SETUP_SPLASH_EARLY
+      // If we're in wifi setup mode, show the local setup PNG and DO NOT let any other logic overwrite it.
+      const __m = String(s.mode || "").toLowerCase();
+      const __t = String(s.content_type || "").toLowerCase();
+      if(__m === "wifi_setup" || __t === "setup"){
+        stopSlideshow();
+        currentMode = "wifi_setup";
+        showImage((s.setup_image || "/setup.png"));
+        return;
+      }
+      // Apply screen rotation if provided by the server/player state
+      applyOrientation(s.orientation || (s.settings && s.settings.orientation) || "landscape");
+
+      // Apply screen orientation (server-controlled)
+      const o = (s.orientation || "landscape").toString();
+      if(o !== currentOrientation){
+        currentOrientation = o;
+        // Reset any inline sizing from previous mode
+        wrapEl.style.width = "100vw";
+        wrapEl.style.height = "100vh";
+        if(o === "portrait-left"){
+          wrapEl.style.width = "100vh";
+          wrapEl.style.height = "100vw";
+          wrapEl.style.transform = "translate(-50%, -50%) rotate(-90deg)";
+        }else if(o === "portrait-right"){
+          wrapEl.style.width = "100vh";
+          wrapEl.style.height = "100vw";
+          wrapEl.style.transform = "translate(-50%, -50%) rotate(90deg)";
+        }else{
+          wrapEl.style.transform = "translate(-50%, -50%)";
+        }
+      }
+
+      const bg = (s.bg || "#000000");
+      wrapEl.style.background = bg;
+      document.body.style.background = bg;
+
+      const rev = s.revision ?? s.rev ?? "";
+      const ctype = (s.content_type || "none");
+      const mode = (s.mode || "idle");
+
+      const u = Array.isArray(s.image_urls) ? s.image_urls
+              : Array.isArray(s.images) ? s.images
+              : (s.content && Array.isArray(s.content.image_urls)) ? s.content.image_urls
+              : (s.content && Array.isArray(s.content.images)) ? s.content.images
+              : [];
+      /* debug disabled */
+
+      // --- CallaStream: Wi‑Fi setup splash screen ---
+      // When the device is in Wi‑Fi setup mode (no saved Wi‑Fi yet), show a local PNG instead of
+      // the activation / no-content screens.
+      if(String(mode).toLowerCase() === "wifi_setup" || String(ctype).toLowerCase() === "setup"){
+        stopSlideshow();
+        urls = [ (s.setup_image || "/setup.png") ];
+        idx = 0;
+        showImage(urls[0]);
+        currentMode = "wifi_setup";
+        return;
+      }
+// Activation
+      if(mode === "activation" || (ctype === "none" && s.code)){
+        currentMode = "activation";
+        currentFrameSrc = "";
+        stopSlideshow();
+        frameEl.src = "about:blank";
+        showMessage("Activation Code: " + (s.code || ""));
+        return;
+      }
+
+      // Slideshow
+      if(ctype === "slideshow"){
+
+        if(currentMode !== "slideshow"){
+          currentMode = "slideshow";
+          currentFrameSrc = "";
+          frameEl.src = "about:blank";
+          // force first start when switching modes
+          lastSlideKey = "";
+          lastSlideRev = "";
+          lastSlideInterval = 0;
+        }
+
+        const slideKey = (u || []).join("|");
+        const slideRev = String(rev ?? "");
+        const nextIntervalMs = Math.max(1, parseInt(s.interval || 8, 10)) * 1000;
+
+        // Only restart slideshow when something actually changes (rev, urls, or interval)
+        if(slideKey !== lastSlideKey || slideRev !== lastSlideRev || nextIntervalMs !== lastSlideInterval){
+          urls = u;
+          intervalMs = nextIntervalMs;
+          lastSlideKey = slideKey;
+          lastSlideRev = slideRev;
+          lastSlideInterval = nextIntervalMs;
+          startSlideshow();
+        }
+
+        return;
+      }
+
+      // Webpage (iframe)
+      if(ctype === "webpage"){
+        stopSlideshow();
+        currentMode = "webpage";
+        const url = (s.url || (s.content && s.content.url) || "");
+        if(!url){ showMessage("No webpage URL assigned"); return; }
+        showFrame(url);
+        return;
+      }
+
+      // YouTube (iframe embed)
+      if(ctype === "youtube"){
+        stopSlideshow();
+        currentMode = "youtube";
+        const y = (s.youtube_url || (s.content && s.content.youtube_url) || "");
+        const embed = toYouTubeEmbed(y);
+        if(!embed){ showMessage("No YouTube URL assigned"); return; }
+        showFrame(embed);
+        return;
+      }
+
+      // None
+        // If we are in WiFi setup mode, never overwrite the setup splash.
+        if(String(s.mode||"").toLowerCase()==="wifi_setup" || String(s.content_type||"").toLowerCase()==="setup"){
+          stopSlideshow();
+          currentMode = "wifi_setup";
+          showImage((s.setup_image || "/setup.png"));
+          return;
+        }
+        currentMode = "none";
+        currentFrameSrc = "";
+        stopSlideshow();
+        frameEl.src = "about:blank";
+        showMessage("No content assigned");
+
+    }catch(err){
+      stopSlideshow();
+      showMessage("Offline/waiting...\n" + (err && (err.stack || err.message) ? (err.stack || err.message) : String(err)));
+      /* debug disabled */
+
+    }finally{
+      __polling = false;
+    }
+  }
+
+  poll();
+  setInterval(poll, 2000);
+
+  imgEl.addEventListener("error", () => showMessage("Image failed to load"));
+})();
+</script>
+</body>
+</html>

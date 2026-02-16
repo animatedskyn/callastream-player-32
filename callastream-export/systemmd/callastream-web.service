@@ -1,0 +1,13 @@
+[Unit]
+Description=CallaStream Local Web Server
+After=network.target
+
+[Service]
+User=adminjeff
+WorkingDirectory=/opt/callastream
+ExecStart=/usr/bin/python3 -m http.server 8765
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=CallaStream Player Poller (Upload Only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=CALLASTREAM_POLL_SECONDS=2.5
+ExecStart=/usr/bin/python3 /opt/callastream/player.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
