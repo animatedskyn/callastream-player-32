@@ -29,19 +29,20 @@ install -m 0644 callastream-player.service /etc/systemd/system/callastream-playe
 install -m 0644 ../systemmd/callastream-kiosk-web.service /etc/systemd/system/callastream-kiosk-web.service
 install -m 0644 ../systemmd/callastream-kiosk.service /etc/systemd/system/callastream-kiosk.service
 
-echo "[5/9] Preventing Chromium/autostart browser conflicts..."
+echo "[5/9] Preventing desktop/autostart browser conflicts..."
 for f in \
   /etc/xdg/lxsession/LXDE-pi/autostart \
   /etc/xdg/lxsession/LXDE/autostart \
   /home/pi/.config/lxsession/LXDE-pi/autostart; do
   if [[ -f "$f" ]]; then
-    sed -i '/chromium-browser/d;/\/usr\/bin\/chromium-browser/d;/^@cog /d;/\/usr\/bin\/cog /d' "$f"
+    # Keep systemd service as the single kiosk launch authority.
+    sed -i '/chromium/d;/^@cog /d;/\/usr\/bin\/cog /d' "$f"
   fi
 done
 
 if [[ -d /etc/xdg/autostart ]]; then
   find /etc/xdg/autostart -maxdepth 1 -type f -name '*.desktop' -print0 | while IFS= read -r -d '' desktop_file; do
-    sed -i '/Exec=.*chromium-browser/d;/Exec=.*\/usr\/bin\/chromium-browser/d;/Exec=.*\bcog\b/d' "$desktop_file"
+    sed -i '/Exec=.*chromium/d;/Exec=.*\bcog\b/d' "$desktop_file"
   done
 fi
 
@@ -57,7 +58,7 @@ systemctl restart callastream-kiosk-web.service
 systemctl restart callastream-kiosk.service
 
 echo "[8/9] Verifying no desktop browser autostart entries remain..."
-rg -n "chromium-browser|\bcog\b" /etc/xdg/lxsession /home/pi/.config/lxsession /etc/xdg/autostart 2>/dev/null || true
+rg -n "chromium|\bcog\b" /etc/xdg/lxsession /home/pi/.config/lxsession /etc/xdg/autostart 2>/dev/null || true
 
 echo "[9/9] Done. Check logs:"
 echo "  journalctl -u callastream-player -f"

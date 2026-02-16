@@ -87,5 +87,5 @@ Expected executable:
 Verify no desktop autostart browser entries remain:
 
 ```bash
-rg -n "chromium-browser|\bcog\b" /etc/xdg/lxsession /home/pi/.config/lxsession /etc/xdg/autostart
+rg -n "chromium|\bcog\b" /etc/xdg/lxsession /home/pi/.config/lxsession /etc/xdg/autostart
 ```
