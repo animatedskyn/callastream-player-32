@@ -4,7 +4,7 @@
 
 These files are responsible for web UI startup:
 
-- `systemmd/callastream-kiosk.service` - systemd unit that starts X11 + Chromium kiosk.
+- `systemmd/callastream-kiosk.service` - systemd unit that starts X11 + Chromium kiosk as `pi`.
 - `systemmd/callastream-kiosk-web.service` - local HTTP server for `player.html`.
 - `callastream/kiosk-launch.sh` - browser launcher (uses Chromium binary directly, not the `chromium-browser` wrapper).
 - `callastream/setup/wifi_setup_daemon.sh` - first-boot AP workflow (`callastream-setup`) and reboot after Wi-Fi save.
@@ -33,7 +33,7 @@ sudo systemctl restart callastream-player.service callastream-kiosk-web.service 
 
 ## Why this avoids the Pi Zero 2 W Chromium warning
 
-`kiosk-launch.sh` probes and executes Chromium's real binary (`/usr/lib/chromium-browser/chromium-browser` or `/usr/lib/chromium/chromium`) directly, so the `/usr/bin/chromium-browser` wrapper warning for <1GB devices is not used.
+`kiosk-launch.sh` probes and executes Chromium's real ELF binary directly and explicitly rejects script wrappers. This bypasses the `/usr/bin/chromium-browser` low-RAM warning dialog path entirely.
 
 It also adds low-memory kiosk flags for 512MB devices:
 
@@ -42,6 +42,9 @@ It also adds low-memory kiosk flags for 512MB devices:
 - limits renderer process count
 - enables low-end device mode
 - keeps kiosk full-screen with no error dialogs
+
+
+The installer also removes any `chromium-browser` entries from LXDE autostart files so desktop autostart cannot reintroduce the wrapper popup during boot.
 
 ## First-boot flow (no stored Wi-Fi)
 
