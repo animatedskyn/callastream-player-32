@@ -39,7 +39,7 @@ DHCP_END="192.168.4.150"
 
 cat >"$RUN_DIR/hostapd.conf" <<EOF
 interface=$IFACE
-ssid=CallaStream-Setup
+ssid=callastream-setup
 hw_mode=g
 channel=6
 wmm_enabled=0
@@ -133,8 +133,8 @@ EOF
 fi
 
 # Mark setup complete and reboot
-log "WiFi connected. Restarting CallaStream player..."
+log "WiFi connected. Clearing setup marker and rebooting..."
 rm -f "$FORCE_FILE" || true
 sync
-systemctl restart callastream-player
+systemctl reboot
 exit 0
