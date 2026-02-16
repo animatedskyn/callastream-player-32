@@ -11,6 +11,7 @@ WorkingDirectory=/opt/callastream
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/pi/.Xauthority
 Environment=HOME=/home/pi
+Environment=CALLASTREAM_KIOSK_LOG=/var/log/callastream/kiosk-launch.log
 ExecStart=/usr/bin/xinit /opt/callastream/kiosk-launch.sh -- :0 -nocursor -s 0 -dpms
 Restart=always
 RestartSec=3

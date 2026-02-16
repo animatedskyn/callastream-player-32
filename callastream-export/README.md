@@ -53,3 +53,6 @@ The installer also removes any `chromium-browser` entries from LXDE autostart fi
 3. You connect and submit Wi-Fi credentials.
 4. Device saves credentials and reboots automatically.
 5. Device boots again, shows boot logo, then claim/player screen.
+
+
+For full deployment file mapping and on-device verification, see `../DEPLOYMENT.md`.
