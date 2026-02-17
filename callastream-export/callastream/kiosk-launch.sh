@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_URL="http://127.0.0.1:8765/player.html"
-STATE_JSON="/opt/callastream/state.json"
-DEVICE_JSON="/opt/callastream/device.json"
-LOG_FILE="${CALLASTREAM_KIOSK_LOG:-/var/log/callastream-kiosk.log}"
+URL="${CALLASTREAM_URL:-http://127.0.0.1:8765/player.html}"
+LOG_FILE="${CALLASTREAM_KIOSK_LOG:-/var/log/callastream/kiosk-launch.log}"
 
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
@@ -13,76 +11,22 @@ log() {
   echo "[$(date '+%F %T')] $*" | tee -a "$LOG_FILE"
 }
 
-extract_first_url_from_json() {
-  local file="$1"
-  [[ -f "$file" ]] || return 1
-
-  python3 - "$file" <<'PY'
-import json
-import sys
-
-path = sys.argv[1]
-keys = (
-    "kiosk_url",
-    "player_url",
-    "launch_url",
-    "url",
-    "content_url",
-    "web_url",
-)
-
-try:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-except Exception:
-    sys.exit(1)
-
-if isinstance(data, dict):
-    for k in keys:
-        v = data.get(k)
-        if isinstance(v, str) and v.strip().startswith(("http://", "https://")):
-            print(v.strip())
-            sys.exit(0)
-
-print("")
-PY
-}
-
-resolve_url() {
-  local url=""
-
-  if [[ -n "${CALLASTREAM_URL:-}" ]]; then
-    url="$CALLASTREAM_URL"
-  fi
-
-  if [[ -z "$url" ]]; then
-    url="$(extract_first_url_from_json "$STATE_JSON" || true)"
-  fi
-
-  if [[ -z "$url" ]]; then
-    url="$(extract_first_url_from_json "$DEVICE_JSON" || true)"
-  fi
-
-  if [[ -z "$url" ]]; then
-    url="$DEFAULT_URL"
-  fi
-
-  printf '%s\n' "$url"
-}
-
 is_script_wrapper() {
   local candidate="$1"
   head -c 2 "$candidate" 2>/dev/null | grep -q '^#!'
 }
 
-is_real_elf_binary() {
+is_real_chromium_binary() {
   local candidate="$1"
+
   [[ -x "$candidate" ]] || return 1
 
+  # Hard reject script wrappers. The Pi low-RAM warning is emitted by wrappers.
   if is_script_wrapper "$candidate"; then
     return 1
   fi
 
+  # Prefer explicit ELF validation when the `file` utility is available.
   if command -v file >/dev/null 2>&1; then
     file -b "$candidate" | grep -qi 'ELF' || return 1
   fi
@@ -90,36 +34,33 @@ is_real_elf_binary() {
   return 0
 }
 
-find_cog_binary() {
+find_chromium_binary() {
   local candidates=(
-    "/usr/bin/cog"
-    "/usr/local/bin/cog"
+    "/usr/lib/chromium/chromium"
+    "/usr/lib/chromium-browser/chromium-browser"
+    "/usr/lib/chromium/chrome"
+    "/usr/bin/chromium"
   )
 
   local bin
   for bin in "${candidates[@]}"; do
-    if is_real_elf_binary "$bin"; then
+    if is_real_chromium_binary "$bin"; then
       echo "$bin"
       return 0
+    fi
+
+    if [[ -x "$bin" ]] && is_script_wrapper "$bin"; then
+      log "Rejected wrapper script: $bin"
     fi
   done
 
   return 1
 }
 
-COG_BIN="$(find_cog_binary || true)"
-if [[ -z "$COG_BIN" ]]; then
-  log "ERROR: Cog is not installed or no valid Cog ELF binary was found."
+CHROMIUM_BIN="$(find_chromium_binary || true)"
+if [[ -z "$CHROMIUM_BIN" ]]; then
+  log "ERROR: No real Chromium ELF binary found (wrapper scripts are intentionally rejected)."
   exit 1
-fi
-
-URL="$(resolve_url)"
-
-# Ensure only one kiosk instance.
-if pgrep -x cog >/dev/null 2>&1; then
-  log "Existing cog process detected; terminating stale instances."
-  pkill -x cog || true
-  sleep 1
 fi
 
 xset -dpms
@@ -130,13 +71,32 @@ if command -v unclutter >/dev/null 2>&1; then
   unclutter -idle 0 -root &
 fi
 
-COG_ARGS=(
-  --platform=x11
-  --fullscreen
-  "$URL"
+CHROMIUM_ARGS=(
+  --kiosk "$URL"
+  --no-first-run
+  --no-default-browser-check
+  --disable-session-crashed-bubble
+  --disable-infobars
+  --disable-component-update
+  --disable-background-networking
+  --disable-sync
+  --disable-extensions
+  --disable-translate
+  --disable-features=Translate,AutofillServerCommunication,InfiniteSessionRestore,MediaRouter
+  --disk-cache-size=10485760
+  --media-cache-size=1048576
+  --renderer-process-limit=2
+  --process-per-site
+  --enable-low-end-device-mode
+  --autoplay-policy=no-user-gesture-required
+  --noerrdialogs
+  --check-for-update-interval=31536000
+  --overscroll-history-navigation=0
+  --disable-dev-shm-usage
+  --disable-gpu-shader-disk-cache
 )
 
-log "Chosen URL: $URL"
-log "Command: $COG_BIN ${COG_ARGS[*]}"
+log "Using Chromium binary: $CHROMIUM_BIN"
+log "Launching args: ${CHROMIUM_ARGS[*]}"
 
-exec "$COG_BIN" "${COG_ARGS[@]}"
+exec "$CHROMIUM_BIN" "${CHROMIUM_ARGS[@]}"

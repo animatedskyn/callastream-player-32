@@ -1,8 +1,8 @@
 # Deployment map (Raspberry Pi OS Lite/X11)
 
-This document lists all kiosk launch points and deployment paths for the WPE WebKit + Cog kiosk.
+This document lists all browser launch points and where files are deployed so Chromium is never started through `/usr/bin/chromium-browser` wrapper scripts.
 
-## Kiosk launch points in this repo
+## Chromium launch points in this repo
 
 Authoritative launch path:
 
@@ -12,17 +12,16 @@ Authoritative launch path:
 
 2. `callastream-export/callastream/kiosk-launch.sh`
    - installed to: `/opt/callastream/kiosk-launch.sh`
-   - resolves kiosk URL from `state.json` / `device.json` with a local default fallback.
-   - verifies a real `cog` binary and launches full-screen kiosk mode.
+   - resolves a real Chromium binary and hard-rejects script wrappers.
 
-Autostart conflict cleanup path:
+Wrapper suppression paths:
 
 3. `callastream-export/callastream/install.sh`
-   - removes browser launch lines from:
+   - removes `chromium-browser` launch lines from:
      - `/etc/xdg/lxsession/LXDE-pi/autostart`
      - `/etc/xdg/lxsession/LXDE/autostart`
      - `/home/pi/.config/lxsession/LXDE-pi/autostart`
-   - strips browser `Exec=...` lines from files in `/etc/xdg/autostart/*.desktop`.
+   - strips `Exec=...chromium-browser...` from files in `/etc/xdg/autostart/*.desktop`.
 
 ## Files and install targets
 
@@ -41,7 +40,7 @@ Application files:
 
 Logs:
 
-- `/var/log/callastream-kiosk.log` (selected URL + full command logged here)
+- `/var/log/callastream/kiosk-launch.log` (selected binary + full args logged here)
 
 ## Install/enable
 
@@ -59,7 +58,7 @@ sudo systemctl enable callastream-player.service callastream-kiosk-web.service c
 sudo systemctl restart callastream-player.service callastream-kiosk-web.service callastream-kiosk.service
 ```
 
-## On-device verification
+## On-device verification (required)
 
 Verify service command path:
 
@@ -67,25 +66,28 @@ Verify service command path:
 systemctl cat callastream-kiosk.service
 ```
 
-Verify launcher log and final URL/command:
+Verify launcher rejects wrappers and records binary:
 
 ```bash
-tail -n 100 /var/log/callastream-kiosk.log
+tail -n 100 /var/log/callastream/kiosk-launch.log
 ```
 
-Verify running kiosk executable is Cog:
+Verify running Chromium executable is NOT wrapper:
 
 ```bash
-pgrep -a cog
-readlink -f /proc/$(pgrep -o cog)/exe
+pidof chromium || pidof chromium-browser
+readlink -f /proc/$(pidof chromium | awk '{print $1}')/exe
 ```
 
-Expected executable:
+Expected result should point to a real binary path such as:
 
-- `/usr/bin/cog`
+- `/usr/lib/chromium/chromium`
+- `/usr/lib/chromium-browser/chromium-browser`
 
-Verify no desktop browser autostart entries remain:
+and should NOT be `/usr/bin/chromium-browser`.
+
+Verify no wrapper autostart entries remain:
 
 ```bash
-rg -n "g[o]ogle-c[h]rome|\bc[h]rome\b|\bcog\b" /etc/xdg/lxsession /home/pi/.config/lxsession /etc/xdg/autostart
+rg -n "chromium-browser" /etc/xdg/lxsession /home/pi/.config/lxsession /etc/xdg/autostart
 ```
